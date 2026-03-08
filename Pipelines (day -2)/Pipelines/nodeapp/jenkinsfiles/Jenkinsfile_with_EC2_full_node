@@ -1,0 +1,73 @@
+pipeline {
+    agent any
+    environment {
+        DOCKER_REPO_FE = 'adomicarts/session-react-frontend-test-1'
+        DOCKER_REPO_BE = 'adomicarts/session-node-backend-test-1'
+    }
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git url: 'https://github.com/HGSChandeepa/Session-Full-DevOps-Workflow', branch: 'main'
+            }
+        }
+        stage('Build Frontend') {
+            steps {
+                dir('EC2 (day-1)/frontend') {
+                    bat 'npm install'
+                    bat 'npm run build'
+                }
+            }
+        }
+        stage('Build Backend') {
+            steps {
+                dir('EC2 (day-1)/backend') {
+                    bat 'npm install'
+                }
+            }
+        }
+        stage('Docker Login') {
+            steps {
+                withCredentials([string(credentialsId: 'docker-password', variable: 'dockerPassword')]) {
+                    script {
+                        bat """
+                        docker login -u adomicarts -p %dockerPassword%
+                        """
+                    }
+                }
+            }
+        }
+        stage('Dockerize and Push Frontend') {
+            steps {
+                script {
+                    bat """
+                    docker build -t ${DOCKER_REPO_FE}:latest "./EC2 (day-1)/frontend"
+                    docker push ${DOCKER_REPO_FE}:latest
+                    """
+                }
+            }
+        }
+        stage('Dockerize and Push Backend') {
+            steps {
+                script {
+                    bat """
+                    docker build -t ${DOCKER_REPO_BE}:latest "./EC2 (day-1)/backend"
+                    docker push ${DOCKER_REPO_BE}:latest
+                    """
+                }
+            }
+        }
+        stage('Deployment') {
+            steps {
+                echo "we will cover this in the session -3"
+            }
+        }
+    }
+    post {
+        always {
+            cleanWs()
+            script {
+                bat 'docker logout'
+            }
+        }
+    }
+}

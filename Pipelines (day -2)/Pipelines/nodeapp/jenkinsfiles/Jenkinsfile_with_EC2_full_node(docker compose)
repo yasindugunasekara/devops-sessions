@@ -1,0 +1,68 @@
+pipeline {
+    agent any
+
+    environment {
+        ImageRegistry = 'adomicarts' // Docker Hub username
+        EC2_IP = '54.171.233.251'  // Replace with your EC2 instance's public IP
+        DockerComposeFile = 'docker-compose.yml'
+        DotEnvFile = '.env'
+    }
+
+    stages {
+        stage('Login to Docker Hub') {
+            steps {
+                withCredentials([string(credentialsId: 'docker-password', variable: 'dockerPassword')]) {
+                    script {
+                        bat """
+                        docker login -u adomicarts -p %dockerPassword%
+                        """
+                    }
+                }
+            }
+        }
+
+        stage("Build Docker Image") {
+            steps {
+                script {
+                    echo "Building Docker Image..."
+                    bat """
+                    docker build -t ${ImageRegistry}/${JOB_NAME}:${BUILD_NUMBER} .
+                    """
+                }
+            }
+        }
+
+        stage("Push Docker Image to DockerHub") {
+            steps {
+                script {
+                    echo "Pushing Image to Docker Hub..."
+                    bat """
+                    docker push ${ImageRegistry}/${JOB_NAME}:${BUILD_NUMBER}
+                    """
+                }
+            }
+        }
+
+        stage("Deploy to AWS EC2") {
+            steps {
+                script {
+                    echo "Deploying application on EC2..."
+                    sshagent(['ec2']) {
+                        bat """
+                        pscp -i ec2-key.pem ${DockerComposeFile} ${DotEnvFile} ubuntu@${EC2_IP}:/home/ubuntu
+                        plink -i ec2-key.pem ubuntu@${EC2_IP} "docker compose -f /home/ubuntu/${DockerComposeFile} --env-file /home/ubuntu/${DotEnvFile} down || true"
+                        plink -i ec2-key.pem ubuntu@${EC2_IP} "docker compose -f /home/ubuntu/${DockerComposeFile} --env-file /home/ubuntu/${DotEnvFile} up -d"
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning up workspace..."
+            cleanWs()
+        }
+    }
+}
